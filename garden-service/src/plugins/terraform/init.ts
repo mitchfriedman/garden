@@ -14,8 +14,8 @@ import { getRoot, getTfOutputs, getStackStatus, applyStack } from "./common"
 export async function getEnvironmentStatus({ ctx, log }: GetEnvironmentStatusParams): Promise<EnvironmentStatus> {
   const provider = ctx.provider as TerraformProvider
 
+  // Return if there is no root stack, or if we're running one of the terraform plugin commands
   if (!provider.config.initRoot) {
-    // Nothing to do!
     return { ready: true, outputs: {} }
   }
 
@@ -23,7 +23,7 @@ export async function getEnvironmentStatus({ ctx, log }: GetEnvironmentStatusPar
   const root = getRoot(ctx, provider)
   const variables = provider.config.variables
 
-  return getStackStatus({ log, provider, autoApply, root, variables })
+  return getStackStatus({ log, provider, applyCommand: "apply-root", autoApply, root, variables })
 }
 
 export async function prepareEnvironment({ ctx, log }: PrepareEnvironmentParams): Promise<PrepareEnvironmentResult> {
@@ -37,8 +37,9 @@ export async function prepareEnvironment({ ctx, log }: PrepareEnvironmentParams)
   const tfVersion = provider.config.version
   const root = getRoot(ctx, provider)
 
-  if (provider.config.autoApply) {
-    await applyStack(log, provider, root, provider.config.variables)
+  // Don't run apply when running plugin commands
+  if (provider.config.autoApply && !(ctx.command?.name === "plugins" && ctx.command?.args.plugin === provider.name)) {
+    await applyStack({ log, root, variables: provider.config.variables, version: provider.config.version })
   }
 
   const outputs = await getTfOutputs(log, tfVersion, root)

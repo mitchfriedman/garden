@@ -20,10 +20,12 @@ import { joi, PrimitiveMap, joiStringMap } from "../../config/common"
 import { writeFile } from "fs-extra"
 import chalk from "chalk"
 
-export const noAutoApplyMsg = deline`
-  Terraform stack is not up-to-date and \`autoApply\` is not enabled. Please run \`terraform apply\` to make sure
-  the stack is in the intended state.
-`
+export const noAutoApplyMsg = (command: string) => {
+  return chalk.yellow(deline`
+    Terraform stack is not up-to-date and ${chalk.underline("autoApply")} is not enabled. Please run
+    ${chalk.white.bold("garden plugins terraform " + command)} to make sure the stack is in the intended state.
+  `)
+}
 
 export const variablesSchema = () => joiStringMap(joi.any())
 
@@ -91,6 +93,7 @@ export function tfValidationError(result: any) {
 interface GetTerraformStackStatusParams {
   log: LogEntry
   provider: TerraformProvider
+  applyCommand: string
   autoApply: boolean
   root: string
   variables: object
@@ -103,16 +106,32 @@ interface GetTerraformStackStatusParams {
  * since the user may want to manually update their stacks. The `autoApply` flag is only for information, and setting
  * it to `true` does _not_ mean this method will apply the change.
  */
-export async function getStackStatus({ log, provider, autoApply, root, variables }: GetTerraformStackStatusParams) {
+export async function getStackStatus({
+  log,
+  provider,
+  applyCommand,
+  autoApply,
+  root,
+  variables,
+}: GetTerraformStackStatusParams) {
   await tfValidate(log, provider, root, variables)
   const tfVersion = provider.config.version
 
-  const logEntry = log.info({ section: "terraform", msg: "Running plan...", status: "active" })
+  const logEntry = log.verbose({ section: "terraform", msg: "Running plan...", status: "active" })
 
   const plan = await terraform(tfVersion).exec({
     log,
     ignoreError: true,
-    args: ["plan", "-detailed-exitcode", "-input=false", ...(await prepareVariables(root, variables))],
+    args: [
+      "plan",
+      "-detailed-exitcode",
+      "-input=false",
+      // We don't refresh here, and trust the state. Users can manually run plan if they need the state refreshed.
+      "-refresh=false",
+      // No reason to lock the state file here since we won't modify it.
+      "-lock=false",
+      ...(await prepareVariables(root, variables)),
+    ],
     cwd: root,
   })
 
@@ -123,10 +142,9 @@ export async function getStackStatus({ log, provider, autoApply, root, variables
     return { ready: true, outputs }
   } else if (plan.exitCode === 1) {
     // Error from terraform. This can, for example, happen if variables are missing or there are errors in the tf files.
+    // We ignore this here and carry on. Following commands will output the same error.
     logEntry.setError()
-    throw new ConfigurationError(`terraform plan returned an error:\n${plan.stderr}`, {
-      output: plan.stderr,
-    })
+    return { ready: false, outputs: {} }
   } else if (plan.exitCode === 2) {
     // No error but stack is not up-to-date
     logEntry.setWarn({ msg: "Not up-to-date" })
@@ -134,7 +152,7 @@ export async function getStackStatus({ log, provider, autoApply, root, variables
       // Trigger the prepareEnvironment handler
       return { ready: false, outputs: {} }
     } else {
-      logEntry.warn(noAutoApplyMsg)
+      logEntry.warn({ symbol: "warning", msg: noAutoApplyMsg(applyCommand) })
       const outputs = await getTfOutputs(log, tfVersion, root)
       return { ready: true, outputs }
     }
@@ -148,14 +166,22 @@ export async function getStackStatus({ log, provider, autoApply, root, variables
   }
 }
 
-export async function applyStack(log: LogEntry, provider: TerraformProvider, root: string, variables: object) {
-  const tfVersion = provider.config.version
+export async function applyStack({
+  log,
+  root,
+  variables,
+  version,
+}: {
+  log: LogEntry
+  root: string
+  variables: object
+  version: string
+}) {
   const args = ["apply", "-auto-approve", "-input=false", ...(await prepareVariables(root, variables))]
 
-  const proc = await terraform(tfVersion).spawn({ log, args, cwd: root })
+  const proc = await terraform(version).spawn({ log, args, cwd: root })
 
   const statusLine = log.info("→ Applying Terraform stack...")
-
   const logStream = split2()
 
   let stdout: string = ""

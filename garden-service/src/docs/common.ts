@@ -69,3 +69,10 @@ export function getProviderUrl(type?: string) {
   const base = DOCS_BASE_URL + "/reference/providers"
   return type ? base + "/" + type : base
 }
+
+/**
+ * Renders the given template key as a literal, suitable for rendering in documentation strings.
+ */
+export function templateStringLiteral(key: string) {
+  return "`${" + key + "}`"
+}

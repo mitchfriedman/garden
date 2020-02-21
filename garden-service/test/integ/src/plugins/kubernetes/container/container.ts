@@ -77,7 +77,7 @@ export async function getContainerTestGarden(environmentName: string = defaultEn
   // We only need to run the cluster-init flow once, because the configurations are compatible
   if (!initialized && environmentName !== "local") {
     // Run cluster-init
-    await clusterInit.handler({ ctx, log: garden.log })
+    await clusterInit.handler({ ctx, log: garden.log, args: [], modules: [] })
     initialized = true
   }
 
