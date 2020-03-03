@@ -56,7 +56,7 @@ export function tailString(str: string, maxLength: number, nextLine = false) {
   if (overflow > 0) {
     if (nextLine) {
       const lineBreakIdx = str.indexOf("\n", overflow)
-      if (lineBreakIdx) {
+      if (lineBreakIdx >= 0) {
         return str.substr(lineBreakIdx + 1)
       }
     }
