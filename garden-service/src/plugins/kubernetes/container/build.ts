@@ -137,7 +137,7 @@ const buildStatusHandlers: { [mode in ContainerBuildMode]: BuildStatusHandler } 
     const registryHostname = getRegistryHostname(provider.config)
 
     const remoteId = await containerHelpers.getDeploymentImageId(module, deploymentRegistry)
-    const skopeoCommand = `skopeo --command-timeout 30 inspect --raw docker://${remoteId}`
+    const skopeoCommand = `skopeo inspect --raw docker://${remoteId}`
 
     // Have to ensure the registry proxy is up before querying, in case the in-cluster registry is being used
     const commandStr = dedent`
@@ -192,7 +192,7 @@ const buildStatusHandlers: { [mode in ContainerBuildMode]: BuildStatusHandler } 
     })
 
     // Non-zero exit code can both mean the manifest is not found, and any other unexpected error
-    if (!res.success && !res.log.includes("manifest unknown")) {
+    if (!res.success && res.log.includes("manifest unknown")) {
       throw new RuntimeError(`Unable to query registry for image status: ${res.log}`, {
         command: skopeoCommand,
         output: res.log,
